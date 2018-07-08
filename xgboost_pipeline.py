@@ -20,10 +20,6 @@ import sys
 import os
 import pandas as pd
 import fuzzymatch as fz
-sys.path.append('/home/dan/Documents/src/gemini_future_airings_feed')
-from model_uploader import RedshiftModelUploader as RMU
-from ConfigParser import SafeConfigParser
-from redshift_uploader import RedshiftDataUploader as rdu
 from sklearn.metrics import auc
 
 
