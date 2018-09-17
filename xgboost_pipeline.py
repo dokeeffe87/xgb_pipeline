@@ -15,38 +15,120 @@ Version 1.0.0
 
 # Import modules
 
-from __future__ import division
-import sys
-import os
-import pandas as pd
-import fuzzymatch as fz
-from sklearn.metrics import auc
-
-
-import xgboost as xgb
-from pandas import rolling_median
 import numpy as np
-import datetime
-from datetime import timedelta
-from sklearn.externals import joblib
-from sqlalchemy import create_engine
-from sklearn.feature_selection import SelectKBest, f_regression, SelectFromModel
-from sklearn.feature_selection import f_regression
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, explained_variance_score, median_absolute_error
-from xgboost.sklearn import XGBRegressor
-from sklearn.ensemble import IsolationForest, ExtraTreesRegressor
-from evolutionary_search import EvolutionaryAlgorithmSearchCV
-from sklearn.model_selection import GridSearchCV, train_test_split, cross_val_score, KFold, RandomizedSearchCV
-from sklearn.base import BaseEstimator, RegressorMixin, clone
-from itertools import compress
-from math import exp, log
-import pickle
-import sys
+import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
+import matplotlib.transforms as mtransforms
+from matplotlib import markers
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import auc, roc_curve
+from sklearn.calibration import calibration_curve
+from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
+from sklearn.feature_selection import SelectFromModel
+from sklearn.preprocessing import LabelBinarizer
 
 
+def make_score_distribution(df, proba_cols, true_col, true_label, title=None, figsize=(10, 10)):
+    """
+    Makes a score distribution for examining the performance of a classifier.
+    :param df: Dataframe containing the true labels, and predicted probabilities for each class
+    :param proba_cols: A list of the column names in df which have the predicted probabilities
+    :param true_col: A string which is the column name in df of the true labels
+    :param true_label: The actual value of the true label (i.e. 1, 2, etc..)
+    :param title: String, the title of plot.  Default is None.
+    :param figsize: Optional: a tuple of integers for the figure size.
+    :return: Nothing
+    """
+    # TODO: Test this for multi-class problems.
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.distplot(df[proba_cols[0]].loc[(df[true_col] == true_label)], kde=False, ax=ax)
+    if title:
+        sns.distplot(df[proba_cols[1]].loc[(df[true_col] == true_label)], kde=False, ax=ax).set_title(title)
+    else:
+        sns.distplot(df[proba_cols[1]].loc[(df[true_col] == true_label)], kde=False, ax=ax)
+    ax.set(xlabel='score', ylabel='count')
+    plt.show()
 
 
-# ultimately replace these with IsolationForest outlier detection.
+def make_roc_curves_array(true_vals, scores_vals, figsize=(10, 10)):
+    """
+    Function for making nice-ish looking roc curves.
+    :param true_vals: Array of true values
+    :param scores_vals: Array of classifier scores
+    :param figsize: Optional: a tuple of integers for the figure size
+    :return: false positive rate, true positive rate, the corresponding threshold, and the auc score
+    """
+    fpr, tpr, threshold = roc_curve(y_true=true_vals, y_score=scores_vals)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure(figsize=figsize)
+    lw = 2
+    plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC curve')
+    plt.legend(loc='lower right')
+    plt.show()
+    
+    return fpr, tpr, threshold, roc_auc
+
+
+def make_roc_curves_df(df, true_col, scores_col, figsize=(10, 10)):
+    """
+    Function for making nice-ish looking roc curves. Take a dataframe as in input instead of arrays.
+    :param df: Dataframe with true labels and predicted scores
+    :param true_col: String. Column name in the dataframe of the true labels
+    :param scores_col: String. Column name in the dataframe of the predicted scores
+    :param figsize: Optional: a tuple of intergers for the figure size
+    :return: false positive rate, true positive rate, the corresponding threshold, and the auc score
+    """
+    fpr, tpr, threshold = roc_curve(y_true=df[true_col].values, y_score=df[scores_col].values)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure(figsize=figsize)
+    lw = 2
+    plt.plot(fpr, tpr, color='darkorange', lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC curve')
+    plt.legend(loc='lower right')
+    plt.show()
+    
+    return fpr, tpr, threshold, roc_auc
+
+
+def calibration_func_array(true_vals, probability_vals_list, legend_labels, title, n_bins=20, figsize=(10,10)):
+    """Function for making reliability plots"""
+    y_vals = []
+    x_vals = []
+    for vals in probability_vals_list:
+        y_array, x_array = calibration_curve(true_vals, vals, n_bins=n_bins)
+        y_vals.append(y_array)
+        x_vals.append(x_array)
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    for i in range(0, len(legend_labels)):
+        plt.plot(x_vals[i], y_vals[i], linewidth=1, label=legend_labels[i], marker=markers.MarkerStyle.filled_markers[i])
+    
+    # Reference line, legends, and axis labels
+    line = mlines.line2D([0, 1], [0, 1], color='white')
+    transform = ax.transAxes
+    line.set_transform(transform)
+    ax.add_line(line)
+    fig.suptitle(title)
+    ax.set_xlabel('Predicted probability')
+    ax.set_ylabel('True probability in each bin')
+    plt.legend()
+    plt.show()
+
+
 def rolling_median_filter(df, col_use, threshold, window):
     median_col_name = col_use + '_med'
     df[median_col_name] = rolling_median(df[col_use], window = window, center=True).fillna(method='bfill').fillna(method='ffill')
@@ -69,9 +151,6 @@ def detect_outlier_position_by_fft(signal, threshold_freq=0.1, frequency_amplitu
 def apply_fft_detection(df, col, win):
     outlier_idx = []
     y = df[col].values
-    # opt = dict(threshold_freq=0.01, frequency_amplitude=0.001)
-    # Better...
-    # opt = dict(threshold_freq=0.001, frequency_amplitude=0.01)
     opt = dict(threshold_freq=0.001, frequency_amplitude=0.001)
 
     for k in range(win * 2, y.size, win):
@@ -146,7 +225,83 @@ def mv(axis_alpha, volume_support, s_unif, s_X, n_generated):
     return auc(axis_alpha, mv), mv
 
 
+class EarlyStoppingClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, classifier, evaluation_metric, num_rounds, feature_selector=None, validation_size=None):
+        self.classifier = classifier
+        self.evaluation_metric = evaluation_metric
+        self.num_rounds = num_rounds
+        self.feature_selector = feature_selector
+        self.validation_size = validation_size
+        self.classes_ = None
+        self.classifier_ = None
+        self.feature_selector_ = None
+        
+    def fit(self, X, y):
+        """Function for fitting the base estimator.  Implements feature selection and also auto generates a validation
+        set for early stopping."""
+        labelbin = LabelBinarizer()
+        Y = labelbin.fit_transform(y)
+        self.classes_ = labelbin.classes_
+        
+        # Do feature selection if desired
+        if self.feature_selector:
+            X_use = self.feature_select(X, y)
+        else:
+            X_use = X
+        
+        # Make the validation set:
+        X_train, X_valid, y_train, y_valid = self.make_validation_set(X_use, y)
 
+        # Fit the base estimator
+        self.classifier_ = clone(self.classifier)
+        self.classifier = self.classifier_.fit(X_train,
+                                               y_train,
+                                               eval_metric=self.evaluation_metric,
+                                               eval_set=[[X_valid, y_valid]],
+                                               early_stopping_rounds=self.num_rounds)
+        
+        return self
+    
+    def predict(self, X):
+        """Makes predictions on input data from trained classifier.  
+        If feature selection is used, it is applied automatically to the input data."""
+        # The predict function changes in XGBoost when early stopping is performed.
+        if self.feature_selector:
+            X_select = self.feature_selector.transform(X)
+        else:
+            X_select = X
+            
+        # This method should only be called once the model is fit anyway, and since we are always using early stopping, 
+        # we can set ntree_limit by default.
+        return self.classifier.predict(X_select, ntree_limit=self.classifier.best_ntree_limit)
+    
+    def predict_proba(self, X):
+        """Makes probability predictions on input data from trained classifier.  If feature selection is used,
+        it is applied automatically to the input data.  Since this method should only be called after the 
+        classifier is fit, and since we are always using early stopping, the best_ntree_limit should be defined by default."""
+        if self.feature_selector:
+            X_select = self.feature_selector.transform(X)
+        else:
+            X_select = X
+        
+        return self.classifier.predict_proba(X_select, ntree_limit=self.classifier.best_ntree_limit)
+
+    def feature_select(self, X, y):
+        """Implements feature selection if so desired."""
+        # TODO: Get tree based feature selection working.
+        self.feature_selector_ = clone(self.feature_selector)
+        self.feature_selector = self.feature_selector_.fit(X, y)
+        
+        return self.feature_selector.transform(X)
+        
+    def make_validation_set(self, X, y):
+        """Makes the validation set."""
+        if self.validation_size:
+            val_size = self.validation_size
+        else:
+            val_size = 0.1
+        X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=val_size)
+        return X_train, X_valid, y_train, y_valid
 
 
 class OutlierRemovalFeatureSelectionRegressor(BaseEstimator, RegressorMixin):
@@ -172,6 +327,10 @@ class OutlierRemovalFeatureSelectionRegressor(BaseEstimator, RegressorMixin):
         return self.regressor_.predict(X_red)
 
     def resample(self, X, y):
+        """This assumes an unsupervised method, so there is no target variable (hence stacking X and y).
+        Should I really split off a subset for training here, and then predict outliers on the remainder,
+        returning only those that made it through?"""
+        # TODO: Add mv and em support to better diagnose performance of unsupervised outlier detection techniques.
         self.outlier_detector_ = clone(self.outlier_detector)
         y_shape = y.reshape((y.shape[0], 1))
         X_mat = np.hstack((X, y_shape))
