@@ -10,7 +10,7 @@ ___  ___  ____\_ |__   ____   ____  _______/  |_  ______ |__|_____   ____ |  | |
 A custom pipeline for xgboost models.  It builds in automated outlier detection and removal, as well as feature
 selection, all to be run as a replacement of a standard sklearn pipeline object during cross validation.
 
-Version 1.0.0
+Version 1.1.0
 """
 
 # Import modules
@@ -27,6 +27,7 @@ from sklearn.calibration import calibration_curve
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from sklearn.feature_selection import SelectFromModel
 from sklearn.preprocessing import LabelBinarizer
+import shap
 
 
 def make_score_distribution(df, proba_cols, true_col, true_label, title=None, figsize=(10, 10)):
@@ -302,6 +303,17 @@ class EarlyStoppingClassifier(BaseEstimator, ClassifierMixin):
             val_size = 0.1
         X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=val_size)
         return X_train, X_valid, y_train, y_valid
+
+    def explain_shap(self, df_X):
+        if self.feature_selector:
+            df_transformed = df_X[df_X.columns[self.feature_selector.get_support(indices=True)]]
+        else:
+            df_transformed = df_X
+        
+        # Build the explainer
+        explainer = shap.TreeExplainer(self.classifier)
+        
+        return explainer, df_transformed
 
 
 class OutlierRemovalFeatureSelectionRegressor(BaseEstimator, RegressorMixin):
