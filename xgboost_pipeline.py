@@ -209,6 +209,7 @@ def apply_fft_detection(df, col, win):
 def em(t, t_max, volume_support, s_unif, s_X, n_generated):
     """
     Excess mass algorithm, used to validate the unsupervised IsolationForest algorithm
+    TODO: Add citation.
     :param t:
     :param t_max:
     :param volume_support:
@@ -237,6 +238,7 @@ def em(t, t_max, volume_support, s_unif, s_X, n_generated):
 def mv(axis_alpha, volume_support, s_unif, s_X, n_generated):
     """
     Mass-Volume algorithm, used to validate the unsupervised IsolationForest algorithm
+    TODO: Add citation
     :param axis_alpha:
     :param volume_support:
     :param s_unif:
