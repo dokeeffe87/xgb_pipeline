@@ -10,12 +10,14 @@ ___  ___  ____\_ |__   ____   ____  _______/  |_  ______ |__|_____   ____ |  | |
 A custom pipeline for xgboost models.  It builds in automated outlier detection and removal, as well as feature
 selection, all to be run as a replacement of a standard sklearn pipeline object during cross validation.
 
-Version 1.1.0
+Version 1.1.1
 """
 
 # Import modules
 
 import numpy as np
+import pandas as pd
+import shap
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import matplotlib.transforms as mtransforms
@@ -27,7 +29,7 @@ from sklearn.calibration import calibration_curve
 from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin, clone
 from sklearn.feature_selection import SelectFromModel
 from sklearn.preprocessing import LabelBinarizer
-import shap
+from pandas import rolling_median
 
 
 def make_score_distribution(df, proba_cols, true_col, true_label, title=None, figsize=(10, 10)):
@@ -106,7 +108,16 @@ def make_roc_curves_df(df, true_col, scores_col, figsize=(10, 10)):
 
 
 def calibration_func_array(true_vals, probability_vals_list, legend_labels, title, n_bins=20, figsize=(10,10)):
-    """Function for making reliability plots"""
+    """
+    Function for making reliability plots
+    :param true_vals: Array of true values
+    :param probability_vals_list: Array of predicted probabilities for the positive class
+    :param legend_labels: List of strings for the graph legend
+    :param title: String used for graph title
+    :param n_bins: Number of bins used to calculate points on calibration curve
+    :param figsize: Tuple for the size of the figure
+    :return: None
+    """
     y_vals = []
     x_vals = []
     for vals in probability_vals_list:
@@ -131,14 +142,30 @@ def calibration_func_array(true_vals, probability_vals_list, legend_labels, titl
 
 
 def rolling_median_filter(df, col_use, threshold, window):
+    """
+    Detects outliers by computing the rolling median of observations
+    :param df: Dataframe containing the column to detect outliers on
+    :param col_use: The name of the column to look at for outliers
+    :param threshold: The upper threshold on the difference between the observed value and the window median to be
+    considered an outlier
+    :param window: The window (number of observations) over which to compute the median
+    :return: List of outlier indices corresponding to indices of the input dataframe
+    """
     median_col_name = col_use + '_med'
-    df[median_col_name] = rolling_median(df[col_use], window = window, center=True).fillna(method='bfill').fillna(method='ffill')
+    df[median_col_name] = rolling_median(df[col_use], window=window, center=True).fillna(method='bfill').fillna(method='ffill')
     difference = np.abs(df[col_use] - df[median_col_name])
     outlier_idx = difference > threshold
     return outlier_idx
 
 
 def detect_outlier_position_by_fft(signal, threshold_freq=0.1, frequency_amplitude=0.001):
+    """
+    Detects outliers by applying fast Fourier transforms
+    :param signal: Array with the values to test for outliers
+    :param threshold_freq: Threshold frequency
+    :param frequency_amplitude: Amplitude used for identifying outliers
+    :return: Index of value if outlier determined, else None
+    """
     signal = signal.copy()
     fft_of_signal = np.fft.fft(signal)
     outlier = np.max(signal) if abs(np.max(signal)) > abs(np.min(signal)) else np.min(signal)
@@ -150,6 +177,13 @@ def detect_outlier_position_by_fft(signal, threshold_freq=0.1, frequency_amplitu
 
 
 def apply_fft_detection(df, col, win):
+    """
+    Function to implement fast Fourier outlier detection
+    :param df: Input dataframe with column to test for outliers
+    :param col: Name of column to test for outliers
+    :param win: Window over which to test for outliers
+    :return: Index of outlier positions corresponding to indices of input dataframe
+    """
     outlier_idx = []
     y = df[col].values
     opt = dict(threshold_freq=0.001, frequency_amplitude=0.001)
@@ -279,7 +313,8 @@ class EarlyStoppingClassifier(BaseEstimator, ClassifierMixin):
     def predict_proba(self, X):
         """Makes probability predictions on input data from trained classifier.  If feature selection is used,
         it is applied automatically to the input data.  Since this method should only be called after the 
-        classifier is fit, and since we are always using early stopping, the best_ntree_limit should be defined by default."""
+        classifier is fit, and since we are always using early stopping, the best_ntree_limit should be defined by
+        default."""
         if self.feature_selector:
             X_select = self.feature_selector.transform(X)
         else:
